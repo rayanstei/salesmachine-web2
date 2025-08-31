@@ -58,17 +58,29 @@ def test_search():
     except ImportError as e:
         return False, f"❌ Moteur: {e}"
 
-# Import du module IA Insights
+# Import du module IA Insights compatible Streamlit
 try:
-    from ai_insights import module_ia_insights
-except ImportError:
-    module_ia_insights = None
+    from ai_insights_streamlit import module_ia_insights
+    ai_insights_available = True
+    st.success("✅ Module IA Insights chargé avec succès")
+except ImportError as e:
+    ai_insights_available = False
+    st.error(f"❌ Module IA Insights non disponible: {e}")
+
+# Import du module Prospection compatible Streamlit
+try:
+    from prospection_streamlit import module_prospection
+    prospection_available = True
+    st.success("✅ Module Prospection chargé avec succès")
+except ImportError as e:
+    prospection_available = False
+    st.error(f"❌ Module Prospection non disponible: {e}")
 
 # Interface
 data, status = load_data()
 search_ok, search_msg = test_search()
 
-# Sidebar
+# Sidebar pour navigation entre modules
 st.sidebar.markdown("## 📊 État Système")
 for s in status:
     if "✅" in s:
@@ -81,73 +93,93 @@ if search_ok:
 else:
     st.sidebar.error(search_msg)
 
-# Métriques
-col1, col2, col3, col4 = st.columns(4)
-with col1:
-    st.metric("🏢 CRM", f"{len(data.get('crm', [])):,}")
-with col2:
-    st.metric("📋 Référence", f"{len(data.get('ref', [])):,}")
-with col3:
-    st.metric("📊 APE", len(data.get('ape', [])))
-with col4:
-    st.metric("💼 ROME", f"{len(data.get('rome', [])):,}")
+st.sidebar.markdown("## 🚀 Modules")
+module_selected = st.sidebar.radio(
+    "Sélectionner un module",
+    options=["🔍 Prospection", "🧠 IA Insights"]
+)
 
-# Onglets navigation
-tab1, tab2 = st.tabs(["🔍 Prospection", "🧠 IA Insights"])
-
-with tab1:
-    if search_ok and 'ref' in data and 'crm' in data:
-        st.markdown("## 🔍 Test Recherche + Déduplication")
-        query = st.text_input("Recherche test", placeholder="cabinet comptable Paris")
-        if st.button("🚀 Tester") and query:
-            try:
-                import salesmachine_validator_corrige
-                with st.spinner("Recherche..."):
-                    results = salesmachine_validator_corrige.lancer_recherche_entreprises_corrigee(query, 10)
-                if results:
-                    st.success(f"✅ {len(results)} entreprises trouvées")
-                    ref_names = set(data['ref']['Entreprise'].dropna().astype(str).str.lower().str.strip())
-                    nouvelles = []
-                    for r in results:
-                        nom = str(r.get('Nom', '')).lower().strip()
-                        if nom and nom not in ref_names:
-                            nouvelles.append(r)
-                    if nouvelles:
-                        st.write(f"**🆕 {len(nouvelles)} nouvelles entreprises:**")
-                        df = pd.DataFrame(nouvelles)
-                        st.dataframe(df, use_container_width=True)
-                        buffer = BytesIO()
-                        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-                            df.to_excel(writer, index=False, sheet_name='Nouvelles')
-                        st.download_button(
-                            "📊 Télécharger",
-                            buffer.getvalue(),
-                            f"nouvelles_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
-                            "application/vnd.ms-excel"
-                        )
-                    else:
-                        st.info("ℹ️ Toutes les entreprises sont déjà connues")
-                else:
-                    st.warning("Aucun résultat")
-            except Exception as e:
-                st.error(f"Erreur: {e}")
-
-with tab2:
+# Affichage du module sélectionné
+if module_selected == "🔍 Prospection":
+    if prospection_available:
+        module_prospection(data)
+    else:
+        st.warning("Module Prospection introuvable ou non compatible Streamlit.")
+        st.markdown("""
+        **Pour résoudre ce problème :**
+        1. Vérifiez que le fichier `modules/prospection_streamlit.py` existe
+        2. Vérifiez les dépendances : `pip install plotly`
+        3. Redémarrez l'application
+        """)
+elif module_selected == "🧠 IA Insights":
     st.markdown("## 🧠 IA Insights")
-    if module_ia_insights is not None:
+    if ai_insights_available:
         module_ia_insights(data)
     else:
         st.warning("Module IA Insights introuvable ou non compatible Streamlit.")
+        st.markdown("""
+        **Pour résoudre ce problème :**
+        1. Vérifiez que le fichier `modules/ai_insights_streamlit.py` existe
+        2. Vérifiez les dépendances : `pip install plotly`
+        3. Redémarrez l'application
+        """)
 
-st.markdown("## 🚀 Système Prêt !")
+# Section de statut système
+st.markdown("---")
+st.markdown("## 🚀 Statut Système")
+
 data_ok = sum(1 for s in status if "✅" in s)
-total_score = data_ok + (1 if search_ok else 0)
+total_score = data_ok + (1 if search_ok else 0) + (1 if ai_insights_available else 0) + (1 if prospection_available else 0)
 
-if total_score >= 4:
-    st.success("🎉 Excellent ! Système opérationnel.")
-elif total_score >= 3:
+# Indicateur de santé du système
+col1, col2, col3, col4 = st.columns(4)
+
+with col1:
+    st.markdown("### 📊 Données")
+    if data_ok >= 3:
+        st.success(f"✅ {data_ok}/4 sources chargées")
+    elif data_ok >= 2:
+        st.warning(f"⚠️ {data_ok}/4 sources chargées")
+    else:
+        st.error(f"❌ {data_ok}/4 sources chargées")
+
+with col2:
+    st.markdown("### 🔍 Recherche")
+    if search_ok:
+        st.success("✅ Moteur opérationnel")
+    else:
+        st.error("❌ Moteur non configuré")
+
+with col3:
+    st.markdown("### 🧠 IA Insights")
+    if ai_insights_available:
+        st.success("✅ Module chargé")
+    else:
+        st.error("❌ Module non disponible")
+
+with col4:
+    st.markdown("### 🔍 Prospection")
+    if prospection_available:
+        st.success("✅ Module chargé")
+    else:
+        st.error("❌ Module non disponible")
+
+# Score global
+if total_score >= 6:
+    st.success("🎉 Excellent ! Système entièrement opérationnel.")
+    
+elif total_score >= 4:
     st.warning("⚠️ Système fonctionnel avec quelques limitations.")
 else:
-    st.error("❌ Système nécessite des corrections.")
+    st.error("❌ Système nécessite des corrections importantes.")
 
-st.markdown(f"**Score**: {total_score}/5 - Prêt pour Streamlit Cloud !")
+st.markdown(f"**Score Global**: {total_score}/7 - {'Prêt pour production' if total_score >= 4 else 'Configuration requise'}")
+
+# Footer
+st.markdown("---")
+st.markdown("""
+<div style="text-align: center; color: #6b7280; padding: 1rem;">
+    <p><strong>SalesMachine 3.0 Web</strong> - Propulsé par Streamlit</p>
+    <p>Version développeur - Pour support: vérifiez les logs et la configuration</p>
+</div>
+""", unsafe_allow_html=True)
